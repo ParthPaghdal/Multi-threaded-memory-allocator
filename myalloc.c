@@ -12,78 +12,80 @@ struct Myalloc {
   enum allocation_algorithm aalgorithm;
   int size;
   void *memory;
-  // Some other data members you want,
-  // such as lists to record allocated/free memory
   struct nodeStruct *allocatedList;
   struct nodeStruct *freeList;
 };
 
 struct Myalloc myalloc;
 
+// Find the best node in the free list based on size
 struct nodeStruct *Best_Node(struct nodeStruct **headRef, int _size) {
   struct nodeStruct *temp = *headRef;
   struct nodeStruct *best = *headRef;
   __int64_t size = _size;
+
   while (temp != NULL) {
-    if ((*(__int64_t *)(temp->blockptr - 8)) <
-            (*(__int64_t *)(best->blockptr - 8)) &&
+    if ((*(__int64_t *)(temp->blockptr - 8)) < (*(__int64_t *)(best->blockptr - 8)) &&
         (*(__int64_t *)(temp->blockptr - 8)) >= size) {
       best = temp;
     }
-
     temp = temp->next;
   }
   return best;
 }
 
+
+// Find the worst node in the free list based on size
 struct nodeStruct *Worst_Node(struct nodeStruct **headRef, int _size) {
   struct nodeStruct *temp = *headRef;
   struct nodeStruct *worst = *headRef;
   __int64_t size = _size;
+
   while (temp != NULL) {
-    if ((*(__int64_t *)(temp->blockptr - 8)) >
-            (*(__int64_t *)(worst->blockptr - 8)) &&
+    if ((*(__int64_t *)(temp->blockptr - 8)) > (*(__int64_t *)(worst->blockptr - 8)) &&
         (*(__int64_t *)(temp->blockptr - 8)) >= size) {
       worst = temp;
     }
-
     temp = temp->next;
   }
 
   return worst;
 }
 
+// Initialize the allocator
 void initialize_allocator(int _size, enum allocation_algorithm _aalgorithm) {
   assert(_size > 0);
   pthread_mutex_init(&lock, NULL);
+
   myalloc.aalgorithm = _aalgorithm;
+
   if (myalloc.aalgorithm != FIRST_FIT && myalloc.aalgorithm != BEST_FIT &&
       myalloc.aalgorithm != WORST_FIT) {
-    printf("invalid fit type");
+    printf("Invalid fit type");
     exit(1);
   }
 
   myalloc.size = _size;
   myalloc.memory = malloc((size_t)myalloc.size);
-
   myalloc.allocatedList = NULL;
 
   // Add some other initialization
-  // set all memory to be 0
+  // Set all memory to be 0
   memset(myalloc.memory, 0, _size);
 
   __int64_t size = _size;
-
   (*(__int64_t *)(myalloc.memory)) = size;
   myalloc.memory += 8;
   myalloc.freeList = List_createNode(myalloc.memory);
 }
 
+// Destroy the allocator and free allocated memory
 void destroy_allocator() {
   pthread_mutex_lock(&lock);
 
-  // free other dynamic allocated memory to avoid memory leak
+  // Free other dynamically allocated memory to avoid memory leaks
   free(myalloc.memory - 8);
+
   while (myalloc.freeList != NULL) {
     struct nodeStruct *temp = myalloc.freeList;
     myalloc.freeList = myalloc.freeList->next;
@@ -95,30 +97,35 @@ void destroy_allocator() {
     myalloc.allocatedList = myalloc.allocatedList->next;
     free(temp);
   }
-  pthread_mutex_unlock(&lock);
 
+  pthread_mutex_unlock(&lock);
   pthread_mutex_destroy(&lock);
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Allocate memory of given size
 void *allocate(int _size) {
   pthread_mutex_lock(&lock);
+
   void *cur = NULL;
   void *ptr = NULL;
   void *hptr = NULL;
   __int64_t remainingSize;
-  // int *hptr = NULL; // header pointer
-  // void *cur;
-  //__int32_t sizeWithHeader = _size + 8; // assuming size is in bytes
-  // printf("Allocating the size is %d\n", _size);
+
   struct nodeStruct *tempF = myalloc.freeList;
+
   if (myalloc.aalgorithm == FIRST_FIT) {
+    // First Fit allocation algorithm
     while (tempF != NULL) {
       cur = tempF->blockptr;
+
       if (*((__int64_t *)(cur - 8)) >= (__int64_t)_size + 8) {
+        // Allocate memory
         hptr = cur - 8;
         remainingSize = (*(__int64_t *)(hptr)) - _size - 8;
         __int64_t size = _size + 8;
+
         if (remainingSize > 8) {
+          // Split the block into allocated and free blocks
           (*(__int64_t *)(hptr)) = size;
           struct nodeStruct *node = List_createNode(cur);
           List_insertTail(&myalloc.allocatedList, node);
@@ -126,29 +133,33 @@ void *allocate(int _size) {
           (*(__int64_t *)(hptr)) = remainingSize;
           tempF->blockptr = hptr + 8;
         } else {
+          // Use the entire block for allocation
           (*(__int64_t *)(hptr)) = size + remainingSize;
           struct nodeStruct *node = List_createNode(cur);
           List_insertTail(&myalloc.allocatedList, node);
-
           List_deleteNode(&myalloc.freeList, tempF);
         }
-        // List_deleteNode(&myalloc.freeList, tempF);
+
         pthread_mutex_unlock(&lock);
         return cur;
       }
+
       tempF = tempF->next;
     }
   } else if (myalloc.aalgorithm == BEST_FIT) {
-
+    // Best Fit allocation algorithm
     tempF = Best_Node(&myalloc.freeList, _size);
+
     if (tempF == NULL) {
       pthread_mutex_unlock(&lock);
       return ptr;
     }
+
     cur = tempF->blockptr;
     hptr = cur - 8;
     remainingSize = (*(__int64_t *)(hptr)) - _size - 8;
     __int64_t size = _size + 8;
+
     if (remainingSize > 8) {
       (*(__int64_t *)(hptr)) = size;
       struct nodeStruct *node = List_createNode(cur);
@@ -160,23 +171,25 @@ void *allocate(int _size) {
       (*(__int64_t *)(hptr)) = size + remainingSize;
       struct nodeStruct *node = List_createNode(cur);
       List_insertTail(&myalloc.allocatedList, node);
-
       List_deleteNode(&myalloc.freeList, tempF);
     }
+
     pthread_mutex_unlock(&lock);
     return cur;
-
-  } else if (myalloc.aalgorithm == WORST_FIT) {
-
+    } else if (myalloc.aalgorithm == WORST_FIT) {
+    // Worst Fit allocation algorithm
     tempF = Worst_Node(&myalloc.freeList, _size);
+
     if (tempF == NULL) {
       pthread_mutex_unlock(&lock);
       return ptr;
     }
+
     cur = tempF->blockptr;
     hptr = cur - 8;
     remainingSize = (*(__int64_t *)(hptr)) - _size - 8;
     __int64_t size = _size + 8;
+
     if (remainingSize > 8) {
       (*(__int64_t *)(hptr)) = size;
       struct nodeStruct *node = List_createNode(cur);
@@ -191,7 +204,7 @@ void *allocate(int _size) {
 
       List_deleteNode(&myalloc.freeList, tempF);
     }
-    // List_deleteNode(&myalloc.freeList, tempF);
+
     pthread_mutex_unlock(&lock);
     return cur;
   }
@@ -200,7 +213,6 @@ void *allocate(int _size) {
 }
 
 void deallocate(void *_ptr) {
-  // printf("Entering deallocate           1\n");
   pthread_mutex_lock(&lock);
 
   if (_ptr == NULL) {
@@ -213,64 +225,60 @@ void deallocate(void *_ptr) {
 
   struct nodeStruct *tempN = List_createNode(_ptr);
   List_insertTail(&myalloc.freeList, tempN);
+
   memset(_ptr, 0, *(__int64_t *)(_ptr - 8) - 8);
+
   struct nodeStruct *temp_a = myalloc.freeList;
   bool contiguous = false;
 
   while (temp_a != NULL && temp_a->next != NULL) {
     __int64_t a_size = *(__int64_t *)(temp_a->blockptr - 8);
     contiguous = false;
+
     if (temp_a->blockptr + a_size == temp_a->next->blockptr) {
       contiguous = true;
     }
+
     if (contiguous) {
+      // Merge contiguous free blocks
       a_size += *(__int64_t *)(temp_a->next->blockptr - 8);
-      // printf("HI   %ld\n", *(__int64_t*)(temp_a->next->blockptr - 8));
       *(__int64_t *)(temp_a->blockptr - 8) = a_size;
       memset(temp_a->next->blockptr - 8, 0, 8);
       List_deleteNode(&myalloc.freeList, temp_a->next);
-      // printf("Exiting deallocate           2\n");
     }
+
     temp_a = temp_a->next;
   }
-  pthread_mutex_unlock(&lock);
-}
-
-int compact_allocation(void **_before, void **_after) {
-  pthread_mutex_lock(&lock);
-  int compacted_size = 0;
-
-  // compact allocated memory
-  // update _before, _after and compacted_size
 
   pthread_mutex_unlock(&lock);
-  return compacted_size;
 }
 
 int available_memory() {
   int available_memory_size = 0;
+
   // Calculate available memory size
   struct nodeStruct *tempA = myalloc.freeList;
   void *cur;
   void *hptr;
-  //int hptr_val;
 
   while (tempA != NULL) {
     cur = tempA->blockptr;
     hptr = cur - 8;
-    //hptr_val = *(__int64_t *)(hptr);
     available_memory_size += *(__int64_t *)(hptr)-8;
     tempA = tempA->next;
   }
+
   return available_memory_size;
 }
 
 void get_statistics(struct Stats *_stat) {
   pthread_mutex_lock(&lock);
+
   // Populate struct Stats with the statistics
 
   int num_allocated_chunks = 0;
   struct nodeStruct *cur = myalloc.allocatedList;
+
   while (cur != NULL) {
     num_allocated_chunks++;
     cur = cur->next;
@@ -280,6 +288,7 @@ void get_statistics(struct Stats *_stat) {
 
   int num_free_chunks = 0;
   cur = myalloc.freeList;
+
   while (cur != NULL) {
     num_free_chunks++;
     cur = cur->next;
@@ -294,8 +303,10 @@ void get_statistics(struct Stats *_stat) {
 
   int smallest_free_chunk = myalloc.size;
   cur = myalloc.freeList;
+
   if (cur != NULL) {
     smallest_free_chunk = *(__int64_t *)(myalloc.freeList->blockptr - 8);
+
     while (cur != NULL) {
       if (*((__int64_t *)(cur->blockptr - 8)) < smallest_free_chunk) {
         smallest_free_chunk = *((__int64_t *)(cur->blockptr - 8));
@@ -303,14 +314,17 @@ void get_statistics(struct Stats *_stat) {
       cur = cur->next;
     }
   }
+
   smallest_free_chunk -= 8;
 
   _stat->smallest_free_chunk_size = smallest_free_chunk;
 
   int largest_free_chunk = 0;
   cur = myalloc.freeList;
+
   if (cur != NULL) {
     largest_free_chunk = *(__int64_t *)(myalloc.freeList->blockptr);
+
     while (cur != NULL) {
       if (*((__int64_t *)(cur->blockptr - 8)) > largest_free_chunk) {
         largest_free_chunk = *((__int64_t *)(cur->blockptr - 8));
@@ -321,6 +335,7 @@ void get_statistics(struct Stats *_stat) {
   largest_free_chunk -= 8;
 
   _stat->largest_free_chunk_size = largest_free_chunk;
+  
   pthread_mutex_unlock(&lock);
 }
 
