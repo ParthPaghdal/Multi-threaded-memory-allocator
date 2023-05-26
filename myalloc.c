@@ -253,6 +253,17 @@ void deallocate(void *_ptr) {
   pthread_mutex_unlock(&lock);
 }
 
+int compact_allocation(void **_before, void **_after) {
+  pthread_mutex_lock(&lock);
+  int compacted_size = 0;
+
+  // compact allocated memory
+  // update _before, _after and compacted_size
+
+  pthread_mutex_unlock(&lock);
+  return compacted_size;
+}
+
 int available_memory() {
   int available_memory_size = 0;
 
